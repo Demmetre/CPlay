@@ -8,6 +8,10 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <dirent.h>
+#include <string.h>
+
+extern int is_directory(const char *path);
 
 #ifndef CP_OPTIONS_H
 #define CP_OPTIONS_H
@@ -70,6 +74,44 @@ void *writer_handler(void *arg)
 
 }
 
+int copy_file(char const *source, char const *target)
+{
+    int src_fd = open(source, O_RDONLY);
+    if(src_fd < 0)
+    {
+        error(EXIT_FAILURE, 0, "Could not open source file %d", source);
+        return -1;
+    }
+
+    int dst_fd = open(target, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if(dst_fd < 0)
+    {
+        error(EXIT_FAILURE, 0, "Could not open destination file %d", target);
+        return -1;
+    }
+    
+    int pipe_fds[2];
+    if(pipe(pipe_fds) == -1){
+        error(EXIT_FAILURE, 0, "Could not create pipe");
+        return -1;
+    }
+
+    pthread_t reader_t, writer_t;
+    thread_arg reader_arg = {src_fd, dst_fd, pipe_fds[1]};
+    thread_arg writer_arg = {src_fd, dst_fd, pipe_fds[0]};
+
+    pthread_create(&reader_t, NULL, reader_handler, &reader_arg);
+    pthread_create(&writer_t, NULL, writer_handler, &writer_arg);
+
+    pthread_join(reader_t, NULL);
+    pthread_join(writer_t, NULL);
+
+    close(src_fd);
+    close(dst_fd);
+
+    return 0;
+}
+
 
 int main(int argc, char **argv)
 {
@@ -117,38 +159,41 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    int src_fd = open(source, O_RDONLY);
-    if(src_fd < 0)
+    char current_src[1000];
+    char current_dst[1000];
+    if(is_directory(source)){
+        
+        if (mkdir(target, 0777) == -1) {
+            error(EXIT_FAILURE, 0, "Could not create directory %d", target);
+        }
+        
+        DIR *d;
+        struct dirent *dir;
+        d = opendir(source);
+        if (d)
+        {
+            while ((dir = readdir(d)) != NULL)
+            {
+                if (dir->d_name[0] == '.') {
+                    continue;
+                }
+                
+                sprintf(current_src, "%s%s\0", source, dir->d_name);
+                sprintf(current_dst, "%s/%s\0", target, dir->d_name);
+
+                if(is_directory(current_src))
+                {
+                    continue;    
+                }
+                copy_file(current_src, current_dst);  
+            }
+            closedir(d);
+        }
+    }
+    else
     {
-        error(EXIT_FAILURE, 0, "Could not open source file %d", source);
-        return 0;
+        copy_file(source, target);
     }
-
-    int dst_fd = open(target, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if(dst_fd < 0)
-    {
-        error(EXIT_FAILURE, 0, "Could not open destination file %d", target);
-        return 0;
-    }
-    
-    int pipe_fds[2];
-    if(pipe(pipe_fds) == -1){
-        error(EXIT_FAILURE, 0, "Could not create pipe");
-        return 0;
-    }
-
-    pthread_t reader_t, writer_t;
-    thread_arg reader_arg = {src_fd, dst_fd, pipe_fds[1]};
-    thread_arg writer_arg = {src_fd, dst_fd, pipe_fds[0]};
-
-    pthread_create(&reader_t, NULL, reader_handler, &reader_arg);
-    pthread_create(&writer_t, NULL, writer_handler, &writer_arg);
-
-    pthread_join(reader_t, NULL);
-    pthread_join(writer_t, NULL);
-
-    close(src_fd);
-    close(dst_fd);
 
     return 0;
 }

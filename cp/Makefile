@@ -4,7 +4,7 @@ LDFLAGS =
 
 BINDIR = bin
 
-SRCS = main.c
+SRCS = main.c util.c
 OBJS = $(SRCS:.c=.o)
 EXEC = my_program
 
