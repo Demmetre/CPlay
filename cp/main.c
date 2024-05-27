@@ -18,6 +18,7 @@ extern int is_directory(const char *path);
 
 struct cp_options
 {
+    bool recurse;
     bool verbose;
 };
 
@@ -25,12 +26,13 @@ struct cp_options
 
 static struct option const long_opts[] = 
 {
+    {"recurse", no_argument, NULL, 'r'},
     {"verbose", no_argument, NULL, 'v'},
     {"target-directory", required_argument, NULL, 't'},
     {NULL, 0, NULL, 0}   
 };
 
-const char *shor_opts = "vt:";
+const char *shor_opts = "rvt:";
 
 #define BUFFER_SIZE 1024
 
@@ -74,8 +76,12 @@ void *writer_handler(void *arg)
 
 }
 
-int copy_file(char const *source, char const *target)
+int copy_file(char const *source, char const *target, bool verbose)
 {
+    if(verbose)
+    {
+        printf("Copying from %s to %s\n", source, target);
+    }
     int src_fd = open(source, O_RDONLY);
     if(src_fd < 0)
     {
@@ -112,6 +118,59 @@ int copy_file(char const *source, char const *target)
     return 0;
 }
 
+void main_loop(char const *source, char const *target, struct cp_options *opts)
+{
+    char current_src[1000];
+    char current_dst[1000];
+    if(is_directory(source)){
+        
+        if (mkdir(target, 0777) == -1) {
+            error(EXIT_FAILURE, 0, "Could not create directory %d", target);
+        }
+        
+        DIR *d;
+        struct dirent *dir;
+        d = opendir(source);
+        if (d)
+        {
+            while ((dir = readdir(d)) != NULL)
+            {
+                if (dir->d_name[0] == '.') {
+                    continue;
+                }
+                
+                sprintf(current_src, "%s%s\0", source, dir->d_name);
+                sprintf(current_dst, "%s/%s\0", target, dir->d_name);
+
+                if(is_directory(current_src))
+                {
+                    if(!opts->recurse)
+                    {
+                        continue;
+                    }
+                    int pid = fork();
+                    if(!pid)
+                    {
+                        sprintf(current_src, "%s/\0", current_src);
+                        main_loop(current_src, current_dst, opts);
+                        break;
+                    }
+                    else
+                    {
+                        continue;
+                    } 
+                }
+                copy_file(current_src, current_dst, opts->verbose);  
+            }
+            closedir(d);
+        }
+    }
+    else
+    {
+        copy_file(source, target, opts->verbose);
+    }
+
+}
 
 int main(int argc, char **argv)
 {
@@ -119,12 +178,16 @@ int main(int argc, char **argv)
     char const *source = NULL;
     char const *target = NULL;
 
-    struct cp_options opts = {false};
+    struct cp_options opts;
+    opts.recurse = false;
+    opts.verbose = false;
     int c;
     while ((c = getopt_long(argc, argv, shor_opts, long_opts, NULL)) != -1)
     {
         switch (c)
         {
+        case 'r':
+            opts.recurse = true;
         case 'v':
             opts.verbose = true;
             break;
@@ -159,41 +222,7 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    char current_src[1000];
-    char current_dst[1000];
-    if(is_directory(source)){
-        
-        if (mkdir(target, 0777) == -1) {
-            error(EXIT_FAILURE, 0, "Could not create directory %d", target);
-        }
-        
-        DIR *d;
-        struct dirent *dir;
-        d = opendir(source);
-        if (d)
-        {
-            while ((dir = readdir(d)) != NULL)
-            {
-                if (dir->d_name[0] == '.') {
-                    continue;
-                }
-                
-                sprintf(current_src, "%s%s\0", source, dir->d_name);
-                sprintf(current_dst, "%s/%s\0", target, dir->d_name);
-
-                if(is_directory(current_src))
-                {
-                    continue;    
-                }
-                copy_file(current_src, current_dst);  
-            }
-            closedir(d);
-        }
-    }
-    else
-    {
-        copy_file(source, target);
-    }
-
+    main_loop(source, target, &opts);
+    
     return 0;
 }
