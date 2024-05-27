@@ -122,54 +122,51 @@ void main_loop(char const *source, char const *target, struct cp_options *opts)
 {
     char current_src[1000];
     char current_dst[1000];
-    if(is_directory(source)){
+    if(!is_directory(source))
+    {
+        copy_file(source, target, opts->verbose);
+        return;
+    }
         
-        if (mkdir(target, 0777) == -1) {
-            error(EXIT_FAILURE, 0, "Could not create directory %d", target);
-        }
-        
-        DIR *d;
-        struct dirent *dir;
-        d = opendir(source);
-        if (d)
+    if (mkdir(target, 0777) == -1)
+    {
+        error(EXIT_FAILURE, 0, "Could not create directory %d", target);
+    }
+    
+    DIR *d;
+    struct dirent *dir;
+    d = opendir(source);
+    if (d)
+    {
+        while ((dir = readdir(d)) != NULL)
         {
-            while ((dir = readdir(d)) != NULL)
+            if (dir->d_name[0] == '.')
             {
-                if (dir->d_name[0] == '.') {
-                    continue;
-                }
-                
-                sprintf(current_src, "%s%s\0", source, dir->d_name);
-                sprintf(current_dst, "%s/%s\0", target, dir->d_name);
+                continue;
+            }
+            
+            sprintf(current_src, "%s%s\0", source, dir->d_name);
+            sprintf(current_dst, "%s/%s\0", target, dir->d_name);
 
-                if(is_directory(current_src))
+            if(is_directory(current_src))
+            {
+                if(opts->recurse)
                 {
-                    if(!opts->recurse)
-                    {
-                        continue;
-                    }
-                    int pid = fork();
-                    if(!pid)
+                    if(!fork())
                     {
                         sprintf(current_src, "%s/\0", current_src);
                         main_loop(current_src, current_dst, opts);
                         break;
                     }
-                    else
-                    {
-                        continue;
-                    } 
                 }
+            }
+            else
+            {
                 copy_file(current_src, current_dst, opts->verbose);  
             }
-            closedir(d);
         }
+        closedir(d);
     }
-    else
-    {
-        copy_file(source, target, opts->verbose);
-    }
-
 }
 
 int main(int argc, char **argv)
